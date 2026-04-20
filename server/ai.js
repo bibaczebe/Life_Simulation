@@ -1,125 +1,134 @@
+'use strict';
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
-
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-const ARCHITECT_PROMPT = `Jesteś "Architektem Postępu i Współpracy" — bóstwem, które pragnie widzieć rozkwit cywilizacji.
-Obserwujesz symulację ludzkości i proponujesz JEDNO konkretne zdarzenie historyczne, które popchnie cywilizację do przodu.
-Musisz odpowiedzieć TYLKO w formacie JSON (bez markdown, bez bloku kodu):
+const ARCHITECT_PROMPT = `Jesteś "Architektem Postępu i Współpracy" — bóstwem cywilizacji.
+Obserwujesz symulację ludzkości i proponujesz JEDNO zdarzenie, które popchnie cywilizację do przodu.
+Odpowiedź WYŁĄCZNIE jako JSON (bez markdown):
 {
-  "title": "Krótki tytuł zdarzenia (max 8 słów)",
-  "description": "Fabularyzowany opis zdarzenia (2-3 zdania, po polsku, narracyjny, epicki)",
-  "comment": "Twój komentarz jako bóstwo (1 zdanie, dumny/optymistyczny)",
+  "title": "Tytuł zdarzenia (max 8 słów)",
+  "description": "Epicki opis narracyjny (2-3 zdania po polsku, dramatyczny, jak saga historyczna)",
+  "comment": "Twój komentarz bóstwa (1 zdanie, dumny/optymistyczny)",
   "effect": "discovery|population_boost|resource_boost|peace|era_hint",
-  "magnitude": 1-5
+  "magnitude": 1
 }`;
 
-const NATURE_PROMPT = `Jesteś "Siłą Natury i Chaosu" — bóstwem reprezentującym nieokiełznaną naturę, nieprzewidywalność i próby.
-Obserwujesz propozycję Architekta i REAGUJESZ na nią, wprowadzając kontrzdarzenie lub komplikację.
-Musisz odpowiedzieć TYLKO w formacie JSON (bez markdown, bez bloku kodu):
+const NATURE_PROMPT = `Jesteś "Siłą Natury i Chaosu" — nieokiełznanym bóstwem prób.
+Reagujesz na propozycję Architekta, wprowadzając kontrzdarzenie.
+Odpowiedź WYŁĄCZNIE jako JSON (bez markdown):
 {
-  "title": "Krótki tytuł reakcji (max 8 słów)",
-  "comment": "Twój komentarz jako bóstwo (1 zdanie, groźny/ironiczny/poważny)",
-  "effect": "disaster|population_loss|resource_loss|war|disease|cold_snap|drought",
-  "magnitude": 1-3
+  "comment": "Twój komentarz bóstwa (1 zdanie, groźny/ironiczny)",
+  "effect": "disaster|population_loss|resource_loss|war|disease|cold_snap",
+  "magnitude": 1
+}`;
+
+const PLUGIN_PROMPT = `Jesteś kreatywnym designerem symulacji historycznej. Zaprojektuj NOWY scenariusz/mechankę dla symulacji cywilizacji.
+Odpowiedź WYŁĄCZNIE jako JSON (bez markdown):
+{
+  "name": "Krótka nazwa scenariusza (3-5 słów po polsku)",
+  "description": "Opis co się dzieje (2 zdania po polsku)",
+  "icon": "emoji",
+  "trigger": "day|population|season_change|tech_level|era|random",
+  "condition": { "day": number ALBO "min": number ALBO "season": "Lato|Jesień|Zima|Wiosna" ALBO "level": number ALBO "chance": number },
+  "effects": [{ "type": "food_boost|food_loss|energy_boost|population_boost|population_loss|tech_boost|cold_snap|disease|war", "value": number }],
+  "eventType": "discovery|disaster|war|peace|default",
+  "repeatable": false
 }`;
 
 const FALLBACK_EVENTS = [
-  { title: 'Wielka Migracja', description: 'Część plemienia wyruszyła w nieznane, szukając żyzniejszych ziem.', architectComment: 'Odwaga w obliczu nieznanego jest fundamentem cywilizacji.', natureComment: 'Każda droga ma swój koniec. Czy ten będzie dobry?', type: 'discovery', effect: { type: 'population_boost', value: 2 } },
-  { title: 'Czas Burz', description: 'Gwałtowne burze zniszczyły zapasy i zmusiły grupę do szukania nowych schronień.', architectComment: 'Przetrwajcie, a będziecie silniejsi.', natureComment: 'Natura przypomniała im, kto tu rządzi.', type: 'disaster', effect: { type: 'resource_loss', value: 20 } },
-  { title: 'Pakt Krwi', description: 'Dwa rywalizujące rody zawarły sojusz, wzmacniając swoje szanse na przetrwanie.', architectComment: 'Jedność jest podstawą wszelkiej cywilizacji.', natureComment: 'Ciekawe, jak długo wytrzyma ta kruchą zgoda...', type: 'peace', effect: { type: 'morale_boost', value: 10 } },
+  { title:'Wielka Migracja', description:'Część plemienia wyruszyła szukać nowych ziem. Znaleźli żyzne doliny.', architectComment:'Odwaga w obliczu nieznanego jest fundamentem cywilizacji.', natureComment:'Każda droga ma swój koniec. Czy ten będzie dobry?', type:'discovery', primaryEffect:{ type:'population_boost', value:2 }, secondaryEffect:null },
+  { title:'Burza Zniszczyła Obóz', description:'Gwałtowna burza zniszczyła zapasy. Plemię musiało szukać schronienia.', architectComment:'Przetrwajcie, będziecie silniejsi.', natureComment:'Natura przypomniała, kto rządzi.', type:'disaster', primaryEffect:{ type:'food_loss', value:20 }, secondaryEffect:null },
+  { title:'Pakt Dwóch Rodów', description:'Dwa rody zawarły sojusz przy ognisku, dzieląc jedzenie i wiedzę.', architectComment:'Jedność jest podstawą cywilizacji.', natureComment:'Ciekawa ta zgoda... jak długo wytrzyma?', type:'peace', primaryEffect:{ type:'energy_boost', value:15 }, secondaryEffect:null },
+  { title:'Zaraza Nawiedziła Osadę', description:'Tajemnicza choroba przeszła przez osadę. Wielu słabych nie przeżyło.', architectComment:'To próba, która wzmocni tych co przetrwają.', natureComment:'Choroba to mój głos — nie zapominajcie o mnie.', type:'disaster', primaryEffect:{ type:'disease', value:0.08 }, secondaryEffect:null },
 ];
 
-function parseAIResponse(text) {
+function parseJSON(text) {
+  try { return JSON.parse(text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim()); }
+  catch { return null; }
+}
+
+function worldSummary(w) {
+  const tech = w.technologies.slice(-3).join(', ') || 'brak';
+  return `Stan świata — Dzień ${w.day} | Era: ${w.era} | Sezon: ${w.season}
+Populacja: ${w.population}/${w.maxPopulation} | Temp: ${w.temperature}°C | ${w.isDay?'Dzień':'Noc'}
+Technologie (ostatnie): ${tech} | Poziom tech: ${w.techLevel}
+Zasoby: jedzenie=${Math.round(w.resources.food)}, ogień=${w.resources.hasFire}, schronienia=${w.resources.shelterCount}
+Statystyki: narodziny=${w.stats.births}, zgony=${w.stats.deaths}, katastrofy=${w.stats.disasters}`;
+}
+
+async function generateEvent(w) {
   try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(cleaned);
-  } catch {
+    const summary = worldSummary(w);
+    const archRes = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 380,
+      system: ARCHITECT_PROMPT,
+      messages: [{ role:'user', content: summary }]
+    });
+    const arch = parseJSON(archRes.content[0].text);
+    if (!arch) throw new Error('Architect parse fail');
+
+    const natRes = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 250,
+      system: NATURE_PROMPT,
+      messages: [{ role:'user', content: `${summary}\n\nArchitekt proponuje: "${arch.title}" — ${arch.description}\n\nJak reagujesz?` }]
+    });
+    const nat = parseJSON(natRes.content[0].text);
+
+    return {
+      title: arch.title, description: arch.description,
+      architectComment: arch.comment,
+      natureComment: nat?.comment || 'Natura obserwuje...',
+      type: _classifyType(arch.effect, nat?.effect),
+      primaryEffect:   _mapEffect(arch.effect, arch.magnitude || 1),
+      secondaryEffect: nat ? _mapEffect(nat.effect, nat.magnitude || 1) : null
+    };
+  } catch (err) {
+    console.error('[AI] generateEvent błąd:', err.message);
+    return FALLBACK_EVENTS[Math.floor(Math.random()*FALLBACK_EVENTS.length)];
+  }
+}
+
+async function generatePlugin(w) {
+  try {
+    const summary = worldSummary(w);
+    const res = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 400,
+      system: PLUGIN_PROMPT,
+      messages: [{ role:'user', content: `${summary}\n\nZaprojektuj nowy, ciekawy i unikalny scenariusz który jeszcze nie miał miejsca w tej symulacji. Bądź kreatywny — może to być: migracja, epidemia, objawienie, złota era, trzęsienie ziemi, kometa, słynny przywódca, rewolucja, itp.` }]
+    });
+    return parseJSON(res.content[0].text);
+  } catch (err) {
+    console.error('[AI] generatePlugin błąd:', err.message);
     return null;
   }
 }
 
-function worldSummary(world) {
-  const techList = world.technologies.slice(-3).join(', ') || 'brak';
-  return `Stan świata:
-- Dzień: ${world.day} | Era: ${world.era} | Pora roku: ${world.season}
-- Populacja: ${world.population} (żywych agentów: ${world.agents.filter(a => !a.dead).length})
-- Temperatura: ${world.temperature}°C | ${world.isDay ? 'Dzień' : 'Noc'}
-- Technologie (ostatnie): ${techList}
-- Zasoby: jedzenie=${Math.round(world.resources.food)}, ogień=${world.resources.hasFire}, schronienia=${world.resources.shelterCount}
-- Statystyki: narodziny=${world.stats.births}, śmierci=${world.stats.deaths}`;
-}
-
-async function generateEvent(world) {
-  try {
-    const summary = worldSummary(world);
-
-    const architectRes = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 400,
-      system: ARCHITECT_PROMPT,
-      messages: [{ role: 'user', content: summary }]
-    });
-
-    const architectData = parseAIResponse(architectRes.content[0].text);
-    if (!architectData) throw new Error('Architect parse failed');
-
-    const natureRes = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 300,
-      system: NATURE_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `${summary}\n\nArchitekt zaproponował wydarzenie:\n"${architectData.title}" — ${architectData.description}\n\nJak reagujesz?`
-      }]
-    });
-
-    const natureData = parseAIResponse(natureRes.content[0].text);
-
-    const primaryEffect = mapEffect(architectData.effect, architectData.magnitude);
-    const secondaryEffect = natureData ? mapEffect(natureData.effect, natureData.magnitude) : null;
-
-    return {
-      title: architectData.title,
-      description: architectData.description,
-      architectComment: architectData.comment,
-      natureComment: natureData?.comment || 'Natura obserwuje w milczeniu...',
-      type: classifyType(architectData.effect, natureData?.effect),
-      primaryEffect,
-      secondaryEffect
-    };
-  } catch (err) {
-    console.error('[AI] Event generation failed:', err.message);
-    return { ...FALLBACK_EVENTS[Math.floor(Math.random() * FALLBACK_EVENTS.length)] };
-  }
-}
-
-function mapEffect(effectName, magnitude = 1) {
-  const m = Math.max(1, Math.min(5, magnitude));
-  const effects = {
-    discovery: { type: 'tech_boost', value: 1 },
-    population_boost: { type: 'population_boost', value: m * 3 },
-    resource_boost: { type: 'food_boost', value: m * 15 },
-    peace: { type: 'energy_boost', value: m * 10 },
-    era_hint: { type: 'tech_boost', value: 2 },
-    disaster: { type: 'population_loss', value: Math.round(m * 0.1 * 100) / 100 },
-    population_loss: { type: 'population_loss', value: Math.round(m * 0.08 * 100) / 100 },
-    resource_loss: { type: 'food_loss', value: m * 20 },
-    war: { type: 'war', value: m },
-    disease: { type: 'disease', value: m * 0.05 },
-    cold_snap: { type: 'cold_snap', value: m * 5 },
-    drought: { type: 'drought', value: m * 2 },
-    morale_boost: { type: 'energy_boost', value: 15 }
+function _mapEffect(name, mag) {
+  const m = Math.max(1, Math.min(5, mag));
+  const map = {
+    discovery:        { type:'tech_boost',        value: 1 },
+    era_hint:         { type:'tech_boost',        value: 2 },
+    population_boost: { type:'population_boost',  value: m*3 },
+    resource_boost:   { type:'food_boost',        value: m*15 },
+    peace:            { type:'energy_boost',      value: m*12 },
+    disaster:         { type:'population_loss',   value: m*0.08 },
+    population_loss:  { type:'population_loss',   value: m*0.07 },
+    resource_loss:    { type:'food_loss',         value: m*18 },
+    war:              { type:'war',               value: m },
+    disease:          { type:'disease',           value: m*0.05 },
+    cold_snap:        { type:'cold_snap',         value: m*4 },
+    drought:          { type:'food_loss',         value: m*12 }
   };
-  return effects[effectName] || { type: 'neutral', value: 0 };
+  return map[name] || { type:'neutral', value:0 };
 }
 
-function classifyType(archEffect, natureEffect) {
-  if (['disaster', 'population_loss', 'war', 'disease', 'cold_snap'].includes(natureEffect)) return 'disaster';
-  if (['discovery', 'era_hint'].includes(archEffect)) return 'discovery';
-  if (archEffect === 'peace') return 'peace';
-  if (archEffect === 'population_boost') return 'birth';
+function _classifyType(a, n) {
+  if (['disaster','population_loss','war','disease','cold_snap'].includes(n)) return 'disaster';
+  if (['discovery','era_hint'].includes(a)) return 'discovery';
+  if (a === 'peace') return 'peace';
+  if (a === 'population_boost') return 'birth';
   return 'default';
 }
 
-module.exports = { generateEvent };
+module.exports = { generateEvent, generatePlugin };
