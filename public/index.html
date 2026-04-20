@@ -1,103 +1,170 @@
 <!DOCTYPE html>
-<html lang="pl">
+<html lang="pl" data-weather="clear">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Life Simulation — Thronglets</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Life Simulation — Command Center</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            terminal: '#04060f', panel: '#080c1c', panelB: '#0a1020',
+            border: '#162040', accent: '#3a6fff', gold: '#e8a820',
+            cgreen: '#3ddc8c', cred: '#e83a4a', cblue: '#5599ff',
+            cpurple: '#aa55ff', cdim: '#3a4a70'
+          },
+          fontFamily: {
+            mono:  ['"Roboto Mono"', 'Courier New', 'monospace'],
+            serif: ['"IM Fell English"', 'Georgia', 'serif'],
+            sans:  ['Roboto', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Roboto+Mono:wght@300;400;600&family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="bg-terminal text-gray-300 font-mono h-screen overflow-hidden flex flex-col select-none">
 
-<div id="loading">
+<!-- Weather overlays -->
+<div id="rain-overlay"      class="weather-layer"></div>
+<div id="lightning-overlay" class="weather-layer lightning-flash"></div>
+<div id="snow-overlay"      class="weather-layer"></div>
+
+<!-- Loading -->
+<div id="loading" class="fixed inset-0 bg-terminal flex flex-col items-center justify-center z-50 gap-5">
   <div class="pulse-ring"></div>
-  <h2>LIFE SIMULATION</h2>
-  <p>Łączenie z symulacją...</p>
+  <div class="text-gold font-mono tracking-widest text-lg">LIFE SIMULATION</div>
+  <div class="text-cdim text-xs tracking-widest">INITIALIZING COMMAND CENTER...</div>
 </div>
 
-<div id="header">
-  <h1>⚛ Life Simulation</h1>
-  <div class="stat-bar">
-    <div class="stat"><span class="stat-label">Populacja</span><span class="stat-value" id="stat-pop">2</span></div>
-    <div class="stat"><span class="stat-label">Era</span><span class="stat-value gold" id="stat-era">—</span></div>
-    <div class="stat"><span class="stat-label">Pora roku</span><span class="stat-value blue" id="stat-season">—</span></div>
-    <div class="stat"><span class="stat-label">Temperatura</span><span class="stat-value" id="stat-temp">—</span></div>
-    <div class="stat"><span class="stat-label">Technologie</span><span class="stat-value gold" id="stat-tech">0</span></div>
-    <div class="stat"><span class="stat-label">Scenariusze</span><span class="stat-value blue" id="stat-plugins">0</span></div>
-    <div class="stat"><span class="stat-label">Narodziny</span><span class="stat-value" id="stat-births">0</span></div>
-    <div class="stat"><span class="stat-label">Zgony</span><span class="stat-value red" id="stat-deaths">0</span></div>
+<!-- ─── Header ─────────────────────────────────────────────────────── -->
+<header id="header" class="flex items-center justify-between px-5 bg-panel border-b border-border flex-shrink-0 h-12">
+  <div class="flex items-center gap-3">
+    <span class="text-gold font-mono font-semibold tracking-widest text-sm">⚛ LIFE SIMULATION</span>
+    <span class="text-cdim text-xs">// COMMAND CENTER</span>
   </div>
-</div>
+  <div id="stat-bar" class="flex gap-5 text-xs">
+    <div class="stat-chip"><span class="chip-label">DZIEŃ</span><span id="h-day"  class="chip-val text-gold">0</span></div>
+    <div class="stat-chip"><span class="chip-label">POP</span><span   id="h-pop"  class="chip-val text-cgreen">2</span></div>
+    <div class="stat-chip"><span class="chip-label">ERA</span><span   id="h-era"  class="chip-val text-gold">—</span></div>
+    <div class="stat-chip"><span class="chip-label">SEZON</span><span id="h-season" class="chip-val text-cblue">—</span></div>
+    <div class="stat-chip"><span class="chip-label">TEMP</span><span  id="h-temp" class="chip-val">—</span></div>
+    <div class="stat-chip"><span class="chip-label">TECH</span><span  id="h-tech" class="chip-val text-cpurple">0</span></div>
+    <div class="stat-chip weather-badge" id="weather-badge"><span id="h-weather-icon">☀️</span><span id="h-weather-label" class="ml-1">Bezchmurnie</span></div>
+  </div>
+</header>
 
-<div id="main">
-  <div id="canvas-wrap">
+<!-- ─── Main ───────────────────────────────────────────────────────── -->
+<main id="main" class="flex flex-1 overflow-hidden">
+
+  <!-- Canvas area -->
+  <div id="canvas-wrap" class="flex-1 relative overflow-hidden">
     <canvas id="world"></canvas>
 
-    <div id="hud">
+    <!-- HUD overlays -->
+    <div id="hud-tl" class="absolute top-3 left-3 text-xs text-cdim pointer-events-none">
       <span id="hud-time">☀️ DZIEŃ</span>
     </div>
 
-    <div id="day-counter">
-      <div class="day-num" id="day-num">0</div>
-      <div class="day-label" id="day-label">DZIEŃ</div>
+    <div id="day-counter" class="absolute top-3 right-3 text-right pointer-events-none">
+      <div id="day-num" class="text-5xl font-mono font-bold text-gold leading-none" style="text-shadow:0 0 30px rgba(232,168,32,.5)">0</div>
+      <div class="text-xs text-cdim tracking-widest">DZIEŃ</div>
     </div>
 
-    <div id="day-progress-bar">
-      <div id="day-progress-fill" style="width:0%"></div>
+    <div id="day-bar" class="absolute bottom-0 left-0 right-0 h-0.5 bg-white/5">
+      <div id="day-fill" class="h-full bg-gradient-to-r from-gold to-orange-500 transition-all duration-100" style="width:0%"></div>
     </div>
 
-    <div id="agent-tooltip">
-      <div class="tt-name" id="tt-name"></div>
-      <div class="tt-sub" id="tt-sub"></div>
-      <div class="tt-bar-row"><span class="tt-bar-label">Energia</span><div class="tt-bar"><div class="tt-bar-fill energy" id="tt-energy"></div></div></div>
-      <div class="tt-bar-row"><span class="tt-bar-label">Głód</span><div class="tt-bar"><div class="tt-bar-fill hunger" id="tt-hunger"></div></div></div>
-      <div class="tt-bar-row"><span class="tt-bar-label">Ciepło</span><div class="tt-bar"><div class="tt-bar-fill warmth" id="tt-warmth"></div></div></div>
-      <div class="tt-bar-row"><span class="tt-bar-label">Zdrowie</span><div class="tt-bar"><div class="tt-bar-fill health" id="tt-health"></div></div></div>
-      <div class="tt-bar-row"><span class="tt-bar-label">Szczęście</span><div class="tt-bar"><div class="tt-bar-fill happy" id="tt-happy"></div></div></div>
-      <div class="tt-genes">
-        <div class="tt-genes-title">Geny</div>
-        <div class="tt-gene-row"><span>Siła</span><span class="tt-gene-val" id="tt-g-str">—</span></div>
-        <div class="tt-gene-row"><span>Inteligencja</span><span class="tt-gene-val" id="tt-g-int">—</span></div>
-        <div class="tt-gene-row"><span>Płodność</span><span class="tt-gene-val" id="tt-g-fer">—</span></div>
-        <div class="tt-gene-row"><span>Wytrzymałość</span><span class="tt-gene-val" id="tt-g-end">—</span></div>
-        <div class="tt-gene-row"><span>Odporność</span><span class="tt-gene-val" id="tt-g-res">—</span></div>
+    <!-- Agent tooltip -->
+    <div id="tooltip" class="tooltip hidden">
+      <div id="tt-name" class="text-gold font-mono font-semibold text-sm mb-0.5"></div>
+      <div id="tt-sub"  class="text-cdim text-xs mb-2"></div>
+      <div class="space-y-1.5">
+        <div class="bar-row"><span class="bar-lbl">Energia</span><div class="bar-bg"><div id="bt-energy" class="bar-fill" style="background:linear-gradient(90deg,#ff8822,#ffcc44)"></div></div></div>
+        <div class="bar-row"><span class="bar-lbl">Głód</span>  <div class="bar-bg"><div id="bt-hunger" class="bar-fill" style="background:linear-gradient(90deg,#e83a4a,#ff8844)"></div></div></div>
+        <div class="bar-row"><span class="bar-lbl">Ciepło</span><div class="bar-bg"><div id="bt-warmth" class="bar-fill" style="background:linear-gradient(90deg,#4488ff,#88ccff)"></div></div></div>
+        <div class="bar-row"><span class="bar-lbl">Zdrowie</span><div class="bar-bg"><div id="bt-health" class="bar-fill" style="background:linear-gradient(90deg,#22cc44,#88ff88)"></div></div></div>
       </div>
-      <div class="tt-thought" id="tt-thought"></div>
-      <div class="tt-psych" id="tt-psych"></div>
-      <div style="margin-top:8px;font-size:10px;color:#445588;cursor:pointer" id="tt-genealogy-btn">🌳 Zobacz drzewo genealogiczne</div>
+      <div class="mt-2 pt-2 border-t border-border">
+        <div class="text-xs text-cdim uppercase tracking-widest mb-1">Geny</div>
+        <div id="tt-genes" class="grid grid-cols-2 gap-x-3 text-xs"></div>
+      </div>
+      <div id="tt-thought" class="mt-2 text-xs italic text-gray-400 font-serif leading-snug"></div>
+      <div id="tt-psych"   class="text-xs text-cpurple mt-0.5"></div>
+      <button id="tt-tree-btn" class="mt-2 text-xs text-cdim hover:text-cblue cursor-pointer">🌳 Drzewo genealogiczne</button>
     </div>
   </div>
 
-  <div id="sidebar">
-    <div id="sidebar-header">
-      <span>📜 Kronika Dziejów</span>
-      <span id="event-count">0 zdarzeń</span>
+  <!-- ─── Right panel ──────────────────────────────────────────────── -->
+  <aside id="right-panel" class="w-72 bg-panel border-l border-border flex flex-col overflow-hidden">
+
+    <!-- God panels -->
+    <div id="arch-panel" class="p-3 border-b border-border">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="text-accent text-xs font-mono tracking-widest">🏛️ ARCHITEKT</span>
+        <span id="arch-source" class="text-xs text-cdim ml-auto">(OpenAI)</span>
+      </div>
+      <div id="arch-decision" class="text-sm text-gray-200 font-mono min-h-[18px]">— oczekiwanie —</div>
+      <div id="arch-narrative" class="text-xs font-serif italic text-gray-500 mt-1 min-h-[16px]"></div>
     </div>
-    <div id="tech-display"><span id="tech-list">Brak technologii</span></div>
-    <div id="audio-indicator">
-      <div id="audio-waves"><span></span><span></span><span></span><span></span><span></span></div>
-      <span id="audio-text">Narrator mówi...</span>
+
+    <div id="chaos-panel" class="p-3 border-b border-border">
+      <div class="flex items-center gap-2 mb-1.5">
+        <span class="text-cred text-xs font-mono tracking-widest">⚡ CHAOS</span>
+        <span class="text-xs text-cdim ml-auto">(Anthropic)</span>
+      </div>
+      <div id="chaos-decision" class="text-sm text-gray-200 font-mono min-h-[18px]">— oczekiwanie —</div>
+      <div id="chaos-narrative" class="text-xs font-serif italic text-gray-500 mt-1 min-h-[16px]"></div>
     </div>
-    <div id="timeline"></div>
-    <div id="legend">
-      <div class="legend-item"><div class="legend-dot" style="background:#5599ff"></div>Mężczyzna</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ff55bb"></div>Kobieta</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#3ddc8c"></div>Jedzenie</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#ff8833"></div>Ogień</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#aa8844"></div>Schronienie</div>
-      <div class="legend-item"><div class="legend-dot" style="background:#e83a4a"></div>Umierający</div>
+
+    <!-- Audio indicator -->
+    <div id="audio-row" class="hidden px-3 py-1.5 border-b border-border items-center gap-2 text-xs text-gold">
+      <div id="audio-waves" class="flex items-end gap-0.5 h-3.5">
+        <span class="wave-bar"></span><span class="wave-bar" style="animation-delay:.1s"></span>
+        <span class="wave-bar" style="animation-delay:.2s"></span><span class="wave-bar" style="animation-delay:.3s"></span>
+      </div>
+      <span id="audio-label">Narrator mówi...</span>
     </div>
+
+    <!-- Stats row -->
+    <div class="flex px-3 py-2 border-b border-border gap-4 text-xs text-cdim">
+      <span>Nar: <b id="s-births" class="text-cgreen">0</b></span>
+      <span>Zg:  <b id="s-deaths" class="text-cred">0</b></span>
+      <span>Kat: <b id="s-disasters" class="text-orange-400">0</b></span>
+      <span>Scen:<b id="s-plugins" class="text-cpurple">0</b></span>
+    </div>
+
+    <!-- Timeline -->
+    <div id="timeline" class="flex-1 overflow-y-auto py-1 scrollbar-custom"></div>
+
+    <!-- Legend -->
+    <div class="flex flex-wrap gap-x-3 gap-y-1 px-3 py-2 border-t border-border text-xs text-cdim">
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cblue inline-block"></span>M</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-pink-400 inline-block"></span>K</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cgreen inline-block"></span>Jedzenie</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-orange-400 inline-block"></span>Ogień</span>
+      <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cred inline-block"></span>Umiera</span>
+    </div>
+  </aside>
+</main>
+
+<!-- Genealogy modal -->
+<div id="gen-modal" class="hidden fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+  <div class="bg-panel border border-border rounded-xl p-5 w-96 max-h-[80vh] overflow-y-auto scrollbar-custom">
+    <div class="flex justify-between mb-3">
+      <h2 id="gen-title" class="text-gold font-mono font-semibold">🌳 Ród</h2>
+      <button id="gen-close" class="text-cdim hover:text-white text-lg">✕</button>
+    </div>
+    <div id="gen-content"></div>
   </div>
 </div>
 
-<div id="genealogy-modal">
-  <div id="genealogy-box">
-    <span id="genealogy-close">✕</span>
-    <h2 id="genealogy-title">🌳 Drzewo Genealogiczne</h2>
-    <div id="genealogy-content"></div>
-  </div>
-</div>
-
+<script src="https://unpkg.com/framer-motion@11/dist/framer-motion.iife.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
