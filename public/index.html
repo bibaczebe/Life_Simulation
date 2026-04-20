@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Life Simulation — Thronglets</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="loading">
+  <div class="pulse-ring"></div>
+  <h2>LIFE SIMULATION</h2>
+  <p>Łączenie z symulacją...</p>
+</div>
+
+<div id="header">
+  <h1>⚛ Life Simulation</h1>
+  <div class="stat-bar">
+    <div class="stat">
+      <span class="stat-label">Populacja</span>
+      <span class="stat-value" id="stat-pop">2</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Era</span>
+      <span class="stat-value gold" id="stat-era">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Pora roku</span>
+      <span class="stat-value" id="stat-season">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Temperatura</span>
+      <span class="stat-value" id="stat-temp">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Technologie</span>
+      <span class="stat-value gold" id="stat-tech">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Narodziny</span>
+      <span class="stat-value" id="stat-births">0</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Zgony</span>
+      <span class="stat-value red" id="stat-deaths">0</span>
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div id="canvas-wrap">
+    <canvas id="world"></canvas>
+    <div id="day-night-overlay"></div>
+
+    <div id="hud">
+      <div id="hud-time">☀️ DZIEŃ</div>
+    </div>
+
+    <div id="day-counter">
+      <div class="day-num" id="day-num">0</div>
+      <div class="day-label">DZIEŃ</div>
+    </div>
+
+    <div id="day-progress-bar">
+      <div id="day-progress-fill" style="width:0%"></div>
+    </div>
+  </div>
+
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <span>📜 Oś Czasu</span>
+      <span id="event-count">0 zdarzeń</span>
+    </div>
+    <div id="tech-display">
+      <span id="tech-list">Brak technologii</span>
+    </div>
+    <div id="timeline"></div>
+    <div id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#4488ff"></div>Mężczyzna</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff44aa"></div>Kobieta</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#44ff88"></div>Jedzenie</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff8833"></div>Ogień</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#aa6633"></div>Schronienie</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ff2200"></div>Umierający</div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

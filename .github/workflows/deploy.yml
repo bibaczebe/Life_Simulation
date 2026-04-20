@@ -1,0 +1,41 @@
+name: Push & Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify server starts
+        run: |
+          timeout 8 node server/index.js &
+          sleep 5
+          curl -f http://localhost:3000/health || exit 1
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PORT: 3000
+
+      - name: Build Docker image
+        run: docker build -t life-simulation:${{ github.sha }} .
+
+      - name: Notify Telegram on deploy
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "text=🚀 *Life Simulation* wdrożony pomyślnie! Commit: \`${GITHUB_SHA:0:7}\`" \
+            -d "parse_mode=Markdown"
