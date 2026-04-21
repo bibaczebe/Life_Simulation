@@ -1,0 +1,25 @@
+{
+  "name": "Odkrycie Żyły Miedzi",
+  "description": "Myśliwi natrafili na błyszczącą rudę w pobliskich górach. Połączenie miedzi z cyną z ceramiki mogą stworzyć brąz, rewolucjonizując narzędzia i broń.",
+  "icon": "⛏️",
+  "trigger": "tech_level",
+  "condition": {
+    "level": 7
+  },
+  "effects": [
+    {
+      "type": "tech_boost",
+      "value": 3
+    },
+    {
+      "type": "population_boost",
+      "value": 8
+    },
+    {
+      "type": "food_loss",
+      "value": -15
+    }
+  ],
+  "eventType": "discovery",
+  "repeatable": false
+}

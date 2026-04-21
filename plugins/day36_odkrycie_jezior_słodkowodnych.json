@@ -1,0 +1,25 @@
+{
+  "name": "Odkrycie Jezior Słodkowodnych",
+  "description": "Grupa łowców natknęła się na jezioro słodkowodne ukryte za zachodnimi wzgórzami. To odkrycie zmienia dotychczasową zależność od zbierania wody deszczowej i otwiera nowe możliwości osadnictwa.",
+  "icon": "💧",
+  "trigger": "day",
+  "condition": {
+    "day": 36
+  },
+  "effects": [
+    {
+      "type": "food_boost",
+      "value": 25
+    },
+    {
+      "type": "population_boost",
+      "value": 8
+    },
+    {
+      "type": "tech_boost",
+      "value": 2
+    }
+  ],
+  "eventType": "discovery",
+  "repeatable": false
+}

@@ -1,0 +1,25 @@
+{
+  "name": "Odkrycie Świetlnego Źródła",
+  "description": "Grupa łowców natyka się na naturalne złoża fosforczastych minerałów w jaskini. Odkrycie przynosi nadzieję na światło nocne i przyciąga pozostałe grupy ludzi do osady.",
+  "icon": "✨",
+  "trigger": "day",
+  "condition": {
+    "day": 16
+  },
+  "effects": [
+    {
+      "type": "tech_boost",
+      "value": 2
+    },
+    {
+      "type": "population_boost",
+      "value": 4
+    },
+    {
+      "type": "food_boost",
+      "value": 15
+    }
+  ],
+  "eventType": "discovery",
+  "repeatable": false
+}

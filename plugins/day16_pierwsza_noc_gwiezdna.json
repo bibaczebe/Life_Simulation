@@ -1,0 +1,25 @@
+{
+  "name": "Pierwsza Noc Gwiezdna",
+  "description": "Anomalia kosmiczna oświetla nocne niebo nieznanym blaskiem, inspirując ludzi do tworzenia pierwszych mitów i religii. Populacja znajduje w tym zjawisku nadzieję na przetrwanie w mrocznym świecie.",
+  "icon": "⭐",
+  "trigger": "day",
+  "condition": {
+    "day": 16
+  },
+  "effects": [
+    {
+      "type": "population_boost",
+      "value": 3
+    },
+    {
+      "type": "tech_boost",
+      "value": 1
+    },
+    {
+      "type": "food_boost",
+      "value": 15
+    }
+  ],
+  "eventType": "discovery",
+  "repeatable": false
+}

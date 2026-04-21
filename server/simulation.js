@@ -53,31 +53,66 @@ class Simulation extends EventEmitter {
   _initWorld() {
     const adam = new Agent(44, 28, 'M', 'Adam');
     const ewa  = new Agent(56, 32, 'F', 'Ewa');
+    // Young adults starting with nothing — must discover everything
+    adam.age = 20; adam.energy = 75; adam.hunger = 15; adam.warmth = 90;
+    ewa.age  = 18; ewa.energy  = 75; ewa.hunger  = 12; ewa.warmth  = 90;
     this.physics.addAgent(adam.id, adam.x, adam.y, adam.genes);
     this.physics.addAgent(ewa.id,  ewa.x,  ewa.y,  ewa.genes);
     return {
       day: 0, tick: 0, dayProgress: 0, isDay: true,
       dayDelta: 1 / TICKS_PER_DAY,
       season: 'Lato', seasonDay: 0,
-      temperature: 22, era: 'Zamierzch Dziejów', eraIndex: 0,
-      population: 2,   maxPopulation: 25,
+      temperature: 20, era: 'Zamierzch Dziejów', eraIndex: 0,
+      population: 2,   maxPopulation: 6,   // starts very low, grows with tech
       techLevel: 0,    technologies: [],
-      weather: 'clear', weatherSpeedMod: 1,
-      resources: { food: 90, wood: 0, hasFire: false, shelterCount: 0, farmCount: 0 },
-      foodNodes:    this._genFood(),
+      weatherSpeedMod: 1,
+      // No pre-given resources — everything must be gathered
+      resources: { food: 0, wood: 0, stone: 0, hasFire: false, shelterCount: 0, farmCount: 0 },
+      foodNodes:    this._genWildPlants(),
+      animals:      this._genAnimals(),
+      resourceNodes:this._genResourceNodes(),
       fireNodes:    [],
       shelterNodes: [],
-      agents:       [adam, ewa],
-      events:       [],
-      stats:        { births: 2, deaths: 0, discoveries: 0, disasters: 0, wars: 0 },
+      agentDirectives: {},   // agentId → { action, priority, ttl, source }
+      agents: [adam, ewa],
+      events: [],
+      stats:  { births: 0, deaths: 0, discoveries: 0, disasters: 0 },
       lastGodDay:   -99,
       lastPluginDay:-99,
     };
   }
 
-  _genFood() {
-    const pos = [[18,12],[82,12],[12,48],[88,48],[50,6],[50,54],[8,28],[92,28],[33,18],[67,18],[33,42],[67,42]];
-    return pos.map(([x,y]) => ({ x, y, food: 65+Math.random()*35, maxFood:100, regen:0.04+Math.random()*0.04 }));
+  _genWildPlants() {
+    // Sparse wild berries/mushrooms — low food, agents must find them
+    const pos = [[18,12],[82,12],[12,48],[88,48],[50,6],[50,54],[8,28],[92,28],[33,18],[67,42]];
+    return pos.map(([x,y]) => ({
+      x, y, food: 5 + Math.random()*12, maxFood: 20,
+      regen: 0.008 + Math.random()*0.006,
+      type: ['berry','mushroom','plant'][Math.floor(Math.random()*3)]
+    }));
+  }
+
+  _genAnimals() {
+    const types = ['deer','rabbit','boar','bird'];
+    return Array.from({ length: 7 }, (_, i) => ({
+      id: 1000 + i,
+      x: 10 + Math.random() * 80, y: 8 + Math.random() * 46,
+      type: types[i % types.length],
+      food: 15 + Math.random() * 20,
+      alive: true, fleeing: false,
+      vx: (Math.random()-0.5)*0.4, vy: (Math.random()-0.5)*0.4,
+      sprite: null,
+    }));
+  }
+
+  _genResourceNodes() {
+    return Array.from({ length: 12 }, (_, i) => ({
+      id: 2000 + i,
+      x: 8 + Math.random() * 84, y: 8 + Math.random() * 44,
+      type: i < 7 ? 'tree' : 'rock',
+      resources: i < 7 ? { wood: 12 + Math.random()*10 } : { stone: 8 + Math.random()*8 },
+      depleted: false, sprite: null,
+    }));
   }
 
   _setupCollisions() {
@@ -118,6 +153,8 @@ class Simulation extends EventEmitter {
     this._dayNight(w);
     this._updateAgents(w);
     this._updateFood(w);
+    this._updateAnimals(w);
+    this._decayDirectives(w);
     this._checkTech(w);
     this._checkPlugins(w);
 
@@ -131,11 +168,15 @@ class Simulation extends EventEmitter {
   }
 
   _dayNight(w) {
-    const tempBySeason = { Lato:25, Jesień:9, Zima:-5, Wiosna:12 };
-    const base  = tempBySeason[w.season] ?? 15;
-    const diurnal  = Math.sin(w.dayProgress * Math.PI * 2) * 8;
-    const nightDrop = w.isDay ? 0 : -20;   // Night drops 20°C
-    w.temperature = Math.round(base + diurnal + nightDrop + this.weather.tempMod);
+    // Realistic temperate base temperatures per season
+    const tempBySeason = { Lato:20, Jesień:9, Zima:-2, Wiosna:12 };
+    const base = tempBySeason[w.season] ?? 14;
+    // Sinusoidal diurnal cycle: peak at solar noon (dayProgress≈0.5), nadir before dawn (≈0.15)
+    // Realistic temperate amplitude: ±4-6°C (8-12°C total daily swing)
+    const amplitude = 4 + (this.weather.type === 'clear' ? 2 : this.weather.type === 'cloudy' ? -1 : 0);
+    const diurnal = Math.sin((w.dayProgress - 0.25) * Math.PI * 2) * amplitude;
+    w.temperature = Math.round(base + diurnal + this.weather.tempMod);
+    w.isDay = w.dayProgress > 0.22 && w.dayProgress < 0.78;
   }
 
   _updateAgents(w) {
@@ -364,9 +405,11 @@ class Simulation extends EventEmitter {
         }
         break;
       case 'population_boost':
-        for (let i = 0; i < Math.round(mag * 3) && w.agents.length < MAX_AGENTS; i++) {
-          const a = new Agent(); this.physics.addAgent(a.id, a.x, a.y, a.genes);
-          this.genealogy.set(a.id, a.genealogyEntry()); w.agents.push(a); w.stats.births++;
+        // Nie tworzymy agentów z powietrza — boost poprawia tylko warunki do reprodukcji
+        for (const a of w.agents.filter(a=>!a.dead)) {
+          a.energy = Math.min(100, a.energy + mag * 15);
+          a.warmth = Math.min(100, a.warmth + mag * 10);
+          a.hunger = Math.max(0, a.hunger - mag * 20);
         }
         break;
       case 'population_loss': {
@@ -391,6 +434,27 @@ class Simulation extends EventEmitter {
     }
   }
 
+  _updateAnimals(w) {
+    for (const a of (w.animals||[])) {
+      if (!a.alive) continue;
+      // Simple wander
+      if (Math.random() < 0.02) {
+        a.vx = (Math.random()-0.5)*0.5;
+        a.vy = (Math.random()-0.5)*0.5;
+      }
+      a.x = Math.max(2, Math.min(98, a.x + a.vx * w.weatherSpeedMod));
+      a.y = Math.max(2, Math.min(58, a.y + a.vy * w.weatherSpeedMod));
+    }
+  }
+
+  _decayDirectives(w) {
+    for (const id in (w.agentDirectives||{})) {
+      const d = w.agentDirectives[id];
+      d.ttl = (d.ttl||0) - 1;
+      if (d.ttl <= 0) delete w.agentDirectives[id];
+    }
+  }
+
   _mkEvt(day, text, type, icon, decision, narrative) {
     return { day, text, type: type || 'default', icon: icon || '📜', decision, narrative };
   }
@@ -410,7 +474,9 @@ class Simulation extends EventEmitter {
       techLevel: w.techLevel, technologies: w.technologies,
       resources: { ...w.resources },
       weather: this.weather.serialize(),
-      foodNodes:    w.foodNodes.map(f=>({ x:f.x, y:f.y, food:+f.food.toFixed(0) })),
+      foodNodes:    (w.foodNodes||[]).map(f=>({ x:f.x, y:f.y, food:+f.food.toFixed(0), type:f.type||'plant' })),
+      animals:      (w.animals||[]).filter(a=>a.alive).map(a=>({ id:a.id, x:+a.x.toFixed(1), y:+a.y.toFixed(1), type:a.type, food:+a.food.toFixed(0) })),
+      resourceNodes:(w.resourceNodes||[]).filter(r=>!r.depleted).map(r=>({ id:r.id, x:+r.x.toFixed(1), y:+r.y.toFixed(1), type:r.type })),
       fireNodes:    w.fireNodes,
       shelterNodes: w.shelterNodes,
       agents:  w.agents.filter(a=>!a.dead).map(a=>a.serialize()),

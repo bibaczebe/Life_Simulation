@@ -1,0 +1,29 @@
+{
+  "name": "Wielka Susza Rzecznej Doliny",
+  "description": "Hauptna rzeka, od wieków zasilająca pola, zmienia swój kurs z powodu trzęsienia ziemi sprzed tygodni. Społeczność musi szybko znaleźć nowe źródła wody i dostosować się do drastycznej zmiany krajobrazu, lub czeka ją głód i exodus.",
+  "icon": "🏜️",
+  "trigger": "day",
+  "condition": {
+    "day": 76
+  },
+  "effects": [
+    {
+      "type": "food_loss",
+      "value": -35
+    },
+    {
+      "type": "population_loss",
+      "value": -12
+    },
+    {
+      "type": "tech_boost",
+      "value": 2
+    },
+    {
+      "type": "energy_boost",
+      "value": 15
+    }
+  ],
+  "eventType": "disaster",
+  "repeatable": false
+}

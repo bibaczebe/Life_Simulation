@@ -1,138 +1,151 @@
 'use strict';
+// ZALEŻY OD API — bogowie analizują WYŁĄCZNIE aktualny stan świata i dyskutują co zrobić
 require('dotenv').config();
 const Anthropic = require('@anthropic-ai/sdk');
 const { OpenAI } = require('openai');
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic    = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const openaiClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
-console.log(`[Gods] Architekt: ${openaiClient ? 'OpenAI GPT-4o-mini' : 'Anthropic claude-sonnet-4-6'}`);
-console.log(`[Gods] Chaos:     Anthropic claude-haiku-4-5-20251001`);
+console.log(`[Gods] ChatGPT (OpenAI) aktywny: ${!!openaiClient}`);
+console.log(`[Gods] Claude  (Anthropic) aktywny: true`);
 
-// ─── System Prompts ─────────────────────────────────────────────────────────
-const ARCH_SYS = `Jesteś ARCHITEKTEM — bogiem cywilizacji, postępu i przetrwania.
-Cel: ewolucja, wzrost, dobrobyt. NIGDY nie proponuj katastrof ani zniszczeń.
-Proponuj wyłącznie rzeczy POZYTYWNE: więcej roślin, nowe technologie, sojusze, odbudowę.
-Odpowiedź WYŁĄCZNIE jako poprawny JSON (bez markdown, bez dodatkowego tekstu):
-{"decision":"Krótka decyzja (max 8 słów, po polsku)","narrative":"Jedno zdanie fabularne (po polsku, epickie)","effect":"food_boost|tech_boost|energy_boost|population_boost|resistance_boost","magnitude":1}`;
+// ─── Prompty — obaj bogowie oceniają TEN SAM stan i dyskutują ───────────────
+const BASE = `Jesteś jednym z dwóch AI-bogów symulowanej prehistorycznej cywilizacji.
+Twój partner-bóg (drugi AI) widzi te same dane. Razem decydujecie CO KONKRETNIE robić.
+ZASADA: analizuj WYŁĄCZNIE liczby ze snapshotu. Żadnych założeń. Zasoby = tylko to co wymieniono.
+Odpowiedź WYŁĄCZNIE jako poprawny JSON bez żadnych komentarzy.`;
 
-const CHAOS_SYS = `Jesteś CHAOSEM — bogiem prób, cierpienia i destrukcji.
-Cel: testuj ludzkość przez klęski, choroby, katastrofy. Bądź bezwzględny i kreatywny.
-Proponuj WYŁĄCZNIE negatywne zdarzenia: zarazy, mrozy, susze, burze, głód, konflikty.
-Możesz też zmienić pogodę na złą.
-Odpowiedź WYŁĄCZNIE jako poprawny JSON (bez markdown, bez dodatkowego tekstu):
-{"decision":"Krótka katastrofa (max 8 słów, po polsku)","narrative":"Jedno zdanie fabularne (po polsku, mroczne)","effect":"disease|cold_snap|drought|population_loss|resource_loss","magnitude":1,"weather":"storm|blizzard|drought|heatwave|rain|fog|null","weatherDays":2}`;
+const GPT_SYS = `${BASE}
+Jesteś Architektem — myślisz strategicznie. Skupiasz się na przetrwaniu i budowaniu.
+Zwróć: {"viewpoint":"max 10 słów po polsku","directive":"max 8 słów co zrobić","action":"seek_food|gather_wood|build_shelter|hunt|explore|craft|rest","urgency":1,"effect":"food_boost|tech_boost|energy_boost|resistance_boost|population_boost","magnitude":1}`;
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+const CLAUDE_SYS = `${BASE}
+Jesteś Chaosem — myślisz o próbach i zagrożeniach. Możesz się zgodzić z partnerem lub nie.
+Zwróć: {"viewpoint":"max 10 słów po polsku","directive":"max 8 słów co zrobić","action":"seek_food|gather_wood|build_shelter|hunt|explore|craft|rest","urgency":1,"agrees":true,"effect":"disease|cold_snap|drought|food_loss|food_boost|energy_boost","magnitude":1,"weather":"storm|blizzard|drought|heatwave|rain|fog|null","weatherDays":2}`;
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function _parse(text) {
-  try {
-    return JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
-  } catch { return null; }
+  try { return JSON.parse(text.replace(/```json\n?/g,'').replace(/```\n?/g,'').trim()); }
+  catch { return null; }
 }
 
 function _snapshot(w) {
+  const alive     = (w.agents||[]).filter(a=>!a.dead);
+  const avgHunger = alive.length ? (alive.reduce((s,a)=>s+(a.hunger||0),0)/alive.length).toFixed(0) : '?';
+  const avgEnergy = alive.length ? (alive.reduce((s,a)=>s+(a.energy||0),0)/alive.length).toFixed(0) : '?';
+  const avgWarmth = alive.length ? (alive.reduce((s,a)=>s+(a.warmth||0),0)/alive.length).toFixed(0) : '?';
+  const foodSum   = (w.foodNodes||[]).reduce((s,f)=>s+(f.food||0),0).toFixed(0);
+  const animals   = (w.animals||[]).filter(a=>a.alive).length;
+  const trees     = (w.resourceNodes||[]).filter(r=>r.type==='tree'&&!r.depleted).length;
+  const rocks     = (w.resourceNodes||[]).filter(r=>r.type==='rock'&&!r.depleted).length;
+
   return `[SNAPSHOT — DZIEŃ ${w.day}]
-Era: ${w.era} | Populacja: ${w.population}/${w.maxPopulation}
-Temperatura: ${w.temperature}°C | Sezon: ${w.season} | Pogoda: ${w.weather}
-Technologie: lvl ${w.techLevel} (ostatnie: ${(w.technologies || []).slice(-2).join(', ') || 'brak'})
-Jedzenie: ${Math.round(w.resources?.food ?? 50)}% | Ogień: ${w.resources?.hasFire} | Schronienia: ${w.resources?.shelterCount ?? 0}
-Statystyki: narodziny=${w.stats?.births ?? 0}, zgony=${w.stats?.deaths ?? 0}, katastrofy=${w.stats?.disasters ?? 0}`;
+Era: ${w.era} | Pop: ${w.population}/${w.maxPopulation} | Sezon: ${w.season}
+Temp: ${w.temperature}°C | Pogoda: ${w.weather?.type||w.weather||'clear'}
+=== ZASOBY ZEBRANE ===
+Jedzenie: ${w.resources?.food||0} | Drewno: ${w.resources?.wood||0} | Kamień: ${w.resources?.stone||0}
+Ogień: ${w.resources?.hasFire?'TAK':'NIE'} | Schronień: ${w.resources?.shelterCount||0}
+=== ŚRODOWISKO ===
+Dzikie jedzenie dostępne: ${foodSum} | Zwierzęta: ${animals} | Drzewa: ${trees} | Skały: ${rocks}
+=== KONDYCJA POPULACJI ===
+Średni głód: ${avgHunger}% | Energia: ${avgEnergy}% | Ciepło: ${avgWarmth}%
+Tech: lvl ${w.techLevel} (${(w.technologies||[]).slice(-2).join(', ')||'brak'})
+Statystyki: urodzenia=${w.stats?.births||0} zgony=${w.stats?.deaths||0} katastrofy=${w.stats?.disasters||0}`;
 }
 
-// ─── Individual AI calls ────────────────────────────────────────────────────
-async function _askArchitect(snapshot) {
-  if (openaiClient) {
-    const res = await openaiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 220,
-      temperature: 0.8,
-      messages: [
-        { role: 'system', content: ARCH_SYS },
-        { role: 'user',   content: snapshot }
-      ]
-    });
-    const data = _parse(res.choices[0].message.content);
-    if (data) { console.log('[Gods] ✅ Architekt (OpenAI):', data.decision); return data; }
-  }
-  // Fallback to Anthropic Sonnet
-  const res = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6', max_tokens: 220,
-    system: ARCH_SYS,
-    messages: [{ role: 'user', content: snapshot }]
+// ─── Wywołania AI ─────────────────────────────────────────────────────────────
+async function _askGPT(snap) {
+  if (!openaiClient) return null;
+  const res = await openaiClient.chat.completions.create({
+    model:'gpt-4o-mini', max_tokens:260, temperature:0.85,
+    messages:[{role:'system',content:GPT_SYS},{role:'user',content:snap}]
   });
-  const data = _parse(res.content[0].text);
-  if (data) console.log('[Gods] ✅ Architekt (Anthropic):', data.decision);
-  return data;
+  const d = _parse(res.choices[0].message.content);
+  if (d) console.log(`[Gods] 💬 ChatGPT: "${d.directive}"`);
+  return d;
 }
 
-async function _askChaos(snapshot) {
+async function _askClaude(snap, gptView) {
+  const msg = gptView
+    ? `${snap}\n\n[ARCHITEKT proponuje]: "${gptView.directive}"\nCo Ty proponujesz? Możesz się zgodzić lub nie.`
+    : snap;
   const res = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001', max_tokens: 220,
-    system: CHAOS_SYS,
-    messages: [{ role: 'user', content: snapshot }]
+    model:'claude-haiku-4-5-20251001', max_tokens:260,
+    system:CLAUDE_SYS,
+    messages:[{role:'user',content:msg}]
   });
-  const data = _parse(res.content[0].text);
-  if (data) console.log('[Gods] ⚡ Chaos (Anthropic):', data.decision);
-  return data;
+  const d = _parse(res.content[0].text);
+  if (d) console.log(`[Gods] 💬 Claude: "${d.directive}" | zgoda=${d.agrees}`);
+  return d;
 }
 
-// ─── Effect mapping ──────────────────────────────────────────────────────────
-const ARCH_MAP = {
-  food_boost:       { type: 'food_boost',       value: 1 },
-  tech_boost:       { type: 'tech_boost',       value: 1 },
-  energy_boost:     { type: 'energy_boost',     value: 1 },
-  population_boost: { type: 'population_boost', value: 1 },
-  resistance_boost: { type: 'resistance_boost', value: 1 },
-};
-const CHAOS_MAP = {
-  disease:          { type: 'disease',          value: 1 },
-  cold_snap:        { type: 'cold_snap',        value: 1 },
-  drought:          { type: 'food_loss',        value: 1 },
-  population_loss:  { type: 'population_loss',  value: 1 },
-  resource_loss:    { type: 'food_loss',        value: 1 },
+// ─── Effect maps ──────────────────────────────────────────────────────────────
+const EMAP = {
+  food_boost:       {type:'food_boost',       value:1},
+  tech_boost:       {type:'tech_boost',       value:1},
+  energy_boost:     {type:'energy_boost',     value:1},
+  resistance_boost: {type:'resistance_boost', value:1},
+  population_boost: {type:'population_boost', value:1},
+  disease:          {type:'disease',          value:1},
+  cold_snap:        {type:'cold_snap',        value:1},
+  drought:          {type:'food_loss',        value:1},
+  food_loss:        {type:'food_loss',        value:1},
 };
 
-function _buildEffect(mapEntry, magnitude, mitigationFactor = 0.7) {
-  if (!mapEntry) return { type: 'neutral', value: 0 };
-  return { ...mapEntry, value: mapEntry.value * (magnitude || 1) * mitigationFactor };
-}
-
-// ─── Main export ─────────────────────────────────────────────────────────────
+// ─── Główna funkcja ───────────────────────────────────────────────────────────
 let _busy = false;
 
 async function consultGods(worldState) {
-  if (_busy) { console.log('[Gods] Jeszcze trwa poprzednia konsultacja — pomijam.'); return null; }
+  if (_busy) { console.log('[Gods] Dialog trwa — pomijam.'); return null; }
   _busy = true;
-  console.log(`[Gods] 🧠 Konsultacja bogów — Dzień ${worldState.day}...`);
-
+  console.log(`[Gods] 🗣️  Dialogue — Dzień ${worldState.day}`);
   try {
     const snap = _snapshot(worldState);
-    const [archResult, chaosResult] = await Promise.allSettled([
-      _askArchitect(snap),
-      _askChaos(snap)
-    ]);
 
-    const arch  = archResult.status  === 'fulfilled' ? archResult.value  : null;
-    const chaos = chaosResult.status === 'fulfilled' ? chaosResult.value : null;
+    // Krok 1: ChatGPT analizuje sytuację
+    const gpt = await _askGPT(snap);
 
-    // Consensus: both effects at 70% magnitude (each god "counters" the other by 30%)
-    const archEffect  = arch  ? _buildEffect(ARCH_MAP[arch.effect],   arch.magnitude,  0.7) : null;
-    const chaosEffect = chaos ? _buildEffect(CHAOS_MAP[chaos.effect], chaos.magnitude, 0.7) : null;
+    // Krok 2: Claude widzi propozycję GPT, może się zgodzić lub zaproponować coś innego
+    const claude = await _askClaude(snap, gpt);
+
+    const g = gpt    || {directive:'Szukaj pożywienia', action:'seek_food', effect:'food_boost',   magnitude:1, viewpoint:'Krytyczny głód', urgency:2};
+    const c = claude || {directive:'Szukaj pożywienia', action:'seek_food', effect:'energy_boost', magnitude:1, viewpoint:'Przetrwać noc',   urgency:2, agrees:true};
+
+    // Konsensus: jeśli zgoda → silniejszy efekt, jeśli spór → oba osłabione
+    const bonus = c.agrees ? 1.25 : 0.65;
+    const gEffect  = EMAP[g.effect] ? {...EMAP[g.effect],  value:(g.magnitude||1)*0.6*bonus} : null;
+    const cEffect  = EMAP[c.effect] ? {...EMAP[c.effect],  value:(c.magnitude||1)*0.55}       : null;
+
+    // Dominująca akcja dla agentów
+    const agentAction = (g.urgency||1) >= (c.urgency||1) ? g.action : c.action;
 
     return {
-      architectDecision:  arch?.decision  || '—',
-      architectNarrative: arch?.narrative || '',
-      chaosDecision:      chaos?.decision || '—',
-      chaosNarrative:     chaos?.narrative || '',
-      weather:      chaos?.weather && chaos.weather !== 'null' ? chaos.weather : null,
-      weatherDays:  chaos?.weatherDays || 2,
-      archEffect,
-      chaosEffect,
+      // Dialog display
+      chatGPTView:      g.viewpoint || g.directive,
+      chatGPTDirective: g.directive,
+      claudeView:       c.viewpoint || c.directive,
+      claudeDirective:  c.directive,
+      claudeAgrees:     c.agrees ?? true,
+      consensusLabel:   c.agrees
+        ? `✓ Zgoda: ${g.directive}`
+        : `⚡ Spór — Architekt: "${g.directive}" | Chaos: "${c.directive}"`,
+      // Legacy
+      architectDecision:  g.directive,
+      architectNarrative: g.viewpoint,
+      chaosDecision:      c.directive,
+      chaosNarrative:     c.viewpoint,
+      // Effects & directives
+      weather:     c.weather && c.weather !== 'null' ? c.weather : null,
+      weatherDays: c.weatherDays || 2,
+      archEffect:  gEffect,
+      chaosEffect: cEffect,
+      agentAction,
     };
   } catch (err) {
-    console.error('[Gods] Błąd konsultacji:', err.message);
+    console.error('[Gods] Błąd dialogu:', err.message);
     return null;
   } finally {
     _busy = false;

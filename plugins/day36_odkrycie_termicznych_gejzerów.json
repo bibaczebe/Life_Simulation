@@ -1,0 +1,29 @@
+{
+  "name": "Odkrycie Termicznych Gejzerów",
+  "description": "Grupa łowców natrafia na geyzery termalnych wód bijące z ziemi. Odkrycie oferuje ciepło, bezpieczną wodę i nowe tereny do osiedlenia, ale wymaga odwagi by się tam przenieść w niskich temperaturach.",
+  "icon": "♨️",
+  "trigger": "day",
+  "condition": {
+    "day": 36
+  },
+  "effects": [
+    {
+      "type": "food_boost",
+      "value": 15
+    },
+    {
+      "type": "energy_boost",
+      "value": 1
+    },
+    {
+      "type": "population_boost",
+      "value": 3
+    },
+    {
+      "type": "tech_boost",
+      "value": 1
+    }
+  ],
+  "eventType": "discovery",
+  "repeatable": false
+}
