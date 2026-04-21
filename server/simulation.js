@@ -8,6 +8,7 @@ const { consultGods } = require('./gods');
 const { sendTelegram, formatEvent } = require('./telegram');
 const { synthesize }  = require('./tts');
 const plugins         = require('./plugins');
+const { scheduleSprite } = require('./pixellab');
 
 const TICK_MS       = 100;
 const TICKS_PER_DAY = 200;    // 200 * 100ms = 20 seconds = 1 day
@@ -93,7 +94,12 @@ class Simulation extends EventEmitter {
   start() {
     if (this.running) return;
     this.running = true;
-    for (const a of this.world.agents) this.genealogy.set(a.id, a.genealogyEntry());
+    const w = this.world;
+    for (const a of w.agents) {
+      this.genealogy.set(a.id, a.genealogyEntry());
+      scheduleSprite(a, { era: w.era, season: w.season, temperature: w.temperature },
+        (id, b64) => { a.sprite = b64; this.emit('sprite', { id, base64: b64 }); });
+    }
     console.log('[Sim] 🚀 Symulacja v3 uruchomiona. Matter.js aktywny. Dzień = 20s.');
     this._id = setInterval(() => this._tick(), TICK_MS);
   }
@@ -153,6 +159,13 @@ class Simulation extends EventEmitter {
         this.genealogy.set(child.id, child.genealogyEntry());
         const evt = this._mkEvt(w.day, `[Dzień ${w.day}] ${a.name} urodziła ${child.name}. Populacja: ${w.agents.length}.`, 'birth', '👶');
         this._pushEvent(w, evt);
+        // Generuj sprite asynchronicznie — nie blokuje pętli
+        scheduleSprite(child, {
+          era: w.era, season: w.season, temperature: w.temperature
+        }, (id, b64) => {
+          child.sprite = b64;
+          this.emit('sprite', { id, base64: b64 });
+        });
       }
     }
     w.population = w.agents.filter(a => !a.dead).length;

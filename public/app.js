@@ -20,11 +20,14 @@ window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
 // ─── State ───────────────────────────────────────────────────────────────────
-let world    = null;   // full world object from last 'state' ws message
+let world    = null;
 let agents   = [];
-let foodNodes   = [];
-let fireNodes   = [];
+let foodNodes    = [];
+let fireNodes    = [];
 let shelterNodes = [];
+
+// ─── Sprite cache (id → HTMLImageElement) ────────────────────────────────────
+const spriteCache = new Map();
 
 // ─── WebSocket ───────────────────────────────────────────────────────────────
 const WS_URL = `ws://${location.host}`;
@@ -46,6 +49,25 @@ function handleMsg(msg) {
     case 'event':   onEvent(msg.data);   break;
     case 'gods':    onGods(msg.data);    break;
     case 'audio':   onAudio(msg.data);   break;
+    case 'sprite':  onSprite(msg.data);  break;
+  }
+}
+
+function onSprite({ id, base64 }) {
+  if (!base64) return;
+  const img = new Image();
+  img.onload = () => spriteCache.set(id, img);
+  img.src = 'data:image/png;base64,' + base64;
+}
+
+// Ładuj sprite'y z danych stanu (pole sprite na agentach)
+function syncSpritesFromState(agentsArr) {
+  for (const a of agentsArr) {
+    if (a.sprite && !spriteCache.has(a.id)) {
+      const img = new Image();
+      img.onload = () => spriteCache.set(a.id, img);
+      img.src = 'data:image/png;base64,' + a.sprite;
+    }
   }
 }
 
@@ -56,6 +78,7 @@ function onState(data) {
   foodNodes    = data.foodNodes    || [];
   fireNodes    = data.fireNodes    || [];
   shelterNodes = data.shelterNodes || [];
+  syncSpritesFromState(agents);
 
   // Header
   document.getElementById('h-day').textContent    = data.day      ?? 0;
@@ -530,54 +553,69 @@ function drawTrail(a) {
 
 function drawHumanoid(a) {
   const ax = a.x * SX, ay = a.y * SY;
-  const sc = SX * 0.9; // scale
+  const sc = SX * 0.9;
 
   // State-based glow
   let glowColor = null;
-  if (a.state === 'dying')     glowColor = '#e83a4a';
+  if      (a.state === 'dying')     glowColor = '#e83a4a';
   else if (a.state === 'gestating') glowColor = '#aa55ff';
-  else if (a.state === 'warm') glowColor = '#ff8822';
-  if (glowColor) {
-    ctx.shadowColor = glowColor;
-    ctx.shadowBlur  = 10;
+  else if (a.state === 'warm')      glowColor = '#ff8822';
+  else if (a.state === 'seek_mate') glowColor = '#e8a820';
+
+  const sprite = spriteCache.get(a.id);
+
+  if (sprite) {
+    // ── Pixel art sprite ──
+    const sprW = Math.max(18, sc * 3.2);
+    const sprH = sprW;
+    const sx2  = ax - sprW / 2;
+    const sy2  = ay - sprH;
+
+    if (glowColor) {
+      ctx.shadowColor = glowColor;
+      ctx.shadowBlur  = 14;
+    }
+    ctx.imageSmoothingEnabled = false;           // crisp pixel art
+    ctx.drawImage(sprite, sx2, sy2, sprW, sprH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.shadowBlur = 0;
+
+    // Pregnancy ring
+    if (a.gestatingDays > 0) {
+      ctx.strokeStyle = 'rgba(170,85,255,.7)';
+      ctx.lineWidth   = 1.5;
+      ctx.beginPath();
+      ctx.arc(ax, ay - sprH * 0.5, sprW * 0.55, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  } else {
+    // ── Fallback geometric sprite (before Pixellab responds) ──
+    if (glowColor) { ctx.shadowColor = glowColor; ctx.shadowBlur = 10; }
+
+    ctx.fillStyle = a.skinTone || '#c47a3a';
+    ctx.beginPath(); ctx.arc(ax, ay - sc * 2.2, sc * 0.9, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = a.hairColor || '#3a2a10';
+    ctx.beginPath(); ctx.arc(ax, ay - sc * 2.2, sc * 0.9, Math.PI, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = a.color || '#5599ff';
+    ctx.fillRect(ax - sc * 0.55, ay - sc * 1.7, sc * 1.1, sc * 1.6);
+    ctx.fillRect(ax - sc * 0.55, ay - sc * 0.1, sc * 0.45, sc * 1.1);
+    ctx.fillRect(ax + sc * 0.1,  ay - sc * 0.1, sc * 0.45, sc * 1.1);
+    ctx.shadowBlur = 0;
+
+    if (a.gestatingDays > 0) {
+      ctx.fillStyle = 'rgba(170,85,255,.55)';
+      ctx.beginPath(); ctx.arc(ax, ay - sc * 0.9, sc * 0.55, 0, Math.PI * 2); ctx.fill();
+    }
   }
 
-  // Head
-  ctx.fillStyle = a.skinTone || '#c47a3a';
-  ctx.beginPath();
-  ctx.arc(ax, ay - sc * 2.2, sc * 0.9, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Hair
-  ctx.fillStyle = a.hairColor || '#3a2a10';
-  ctx.beginPath();
-  ctx.arc(ax, ay - sc * 2.2, sc * 0.9, Math.PI, Math.PI * 2);
-  ctx.fill();
-
-  // Body
-  ctx.fillStyle = a.color || '#5599ff';
-  ctx.fillRect(ax - sc * 0.55, ay - sc * 1.7, sc * 1.1, sc * 1.6);
-
-  // Legs
-  ctx.fillRect(ax - sc * 0.55, ay - sc * 0.1, sc * 0.45, sc * 1.1);
-  ctx.fillRect(ax + sc * 0.1,  ay - sc * 0.1, sc * 0.45, sc * 1.1);
-
-  ctx.shadowBlur = 0;
-
-  // Pregnancy indicator
-  if (a.gestatingDays > 0) {
-    ctx.fillStyle = 'rgba(170,85,255,.55)';
-    ctx.beginPath();
-    ctx.arc(ax, ay - sc * 0.9, sc * 0.55, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Name label (only when close enough on a larger canvas)
-  if (SX > 7) {
-    ctx.font      = `${Math.max(8, SX * 0.9)}px "Roboto Mono", monospace`;
-    ctx.fillStyle = 'rgba(200,210,240,.7)';
+  // Name label
+  if (SX > 6) {
+    ctx.font      = `${Math.max(7, SX * 0.85)}px "Roboto Mono", monospace`;
+    ctx.fillStyle = 'rgba(200,210,240,.75)';
     ctx.textAlign = 'center';
-    ctx.fillText(a.name, ax, ay - sc * 3.4);
+    ctx.fillText(a.name, ax, ay - (sprite ? sc * 3.8 : sc * 3.4));
     ctx.textAlign = 'left';
   }
 }

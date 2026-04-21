@@ -37,6 +37,7 @@ function broadcast(type, data) {
 sim.on('state',   data => broadcast('state',   data));
 sim.on('event',   data => broadcast('event',   data));
 sim.on('gods',    data => broadcast('gods',    data));
+sim.on('sprite',  data => broadcast('sprite',  data));
 
 // TTS queue (non-overlapping narration)
 const narrateQueue = [];

@@ -310,7 +310,8 @@ class Agent {
       hairColor: this.hairColor, skinTone: this.skinTone,
       motherId: this.motherId, fatherId: this.fatherId,
       childrenIds: [...this.childrenIds],
-      trail: this.trail.slice(-5), dead: this.dead
+      trail: this.trail.slice(-5), dead: this.dead,
+      sprite: this.sprite || null
     };
   }
 
